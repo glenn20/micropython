@@ -351,7 +351,9 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_2(esp_set_native_code_location_obj, esp_set_nativ
 
 #endif
 
+#if MICROPY_ESP8266_ESPNOW
 extern const mp_obj_module_t mp_module_esp_espnow;
+#endif
 
 STATIC const mp_rom_map_elem_t esp_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR_esp) },
@@ -389,7 +391,9 @@ STATIC const mp_rom_map_elem_t esp_module_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_SLEEP_MODEM), MP_ROM_INT(MODEM_SLEEP_T) },
     #endif
 
+    #if MICROPY_ESP8266_ESPNOW
     { MP_ROM_QSTR(MP_QSTR_espnow), MP_ROM_PTR(&mp_module_esp_espnow) },
+    #endif
 };
 
 STATIC MP_DEFINE_CONST_DICT(esp_module_globals, esp_module_globals_table);
