@@ -5,7 +5,7 @@
  *
  * Copyright (c) 2017-2020 Nick Moore
  * Copyright (c) 2018 shawwwn <shawwwn1@gmail.com>
- * Copyright (c) 2020 Glenn Moloney @glenn20
+ * Copyright (c) 2020-2021 Glenn Moloney @glenn20
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -33,8 +33,6 @@
 
 #include "py/runtime.h"
 
-#if MICROPY_ESP8266_ESPNOW
-
 #include "c_types.h"
 #include "espnow.h"
 
@@ -44,6 +42,7 @@
 #include "py/objstr.h"
 #include "py/objarray.h"
 #include "py/stream.h"
+#include "esp_espnow.h"
 
 #include "mpconfigport.h"
 
@@ -99,24 +98,21 @@ static const size_t BUSY_WAIT_MS = 25;  // milliseconds
 typedef struct _esp_espnow_obj_t {
     mp_obj_base_t base;
 
-    int initialised;
     buffer_t recv_buffer;       // A buffer for received packets
+    mp_obj_tuple_t *irecv_tuple; // A saved tuple for efficient return of data
+    mp_obj_array_t *irecv_peer;
+    mp_obj_array_t *irecv_msg;
+    int initialised;
     size_t sent_packets;
     volatile size_t recv_packets;
     size_t dropped_rx_pkts;
     size_t recv_timeout;        // Timeout for recv_wait()/poll()
     volatile size_t sent_responses;
     volatile size_t sent_successes;
-    mp_obj_tuple_t *irecv_tuple; // A saved tuple for efficient return of data
-    mp_obj_array_t *irecv_peer;
-    mp_obj_array_t *irecv_msg;
 } esp_espnow_obj_t;
 
 // Initialised below.
 const mp_obj_type_t esp_espnow_type;
-
-// A static pointer to the espnow singleton
-STATIC esp_espnow_obj_t *espnow_singleton = NULL;
 
 // ### Consolidated buffer Handling Support functions
 //
@@ -142,8 +138,8 @@ static uint8_t *_get_bytes_len(mp_obj_t obj, size_t size);
 STATIC mp_obj_t espnow_make_new(const mp_obj_type_t *type, size_t n_args,
     size_t n_kw, const mp_obj_t *all_args) {
 
-    if (espnow_singleton != NULL) {
-        return espnow_singleton;
+    if (MP_STATE_PORT(espnow_singleton) != NULL) {
+        return MP_STATE_PORT(espnow_singleton);
     }
     esp_espnow_obj_t *self = m_malloc0(sizeof(esp_espnow_obj_t));
     self->base.type = &esp_espnow_type;
@@ -158,7 +154,7 @@ STATIC mp_obj_t espnow_make_new(const mp_obj_type_t *type, size_t n_args,
     self->irecv_tuple->items[1] = MP_OBJ_FROM_PTR(self->irecv_msg);
 
     // Set the global singleton pointer for the espnow protocol.
-    espnow_singleton = self;
+    MP_STATE_PORT(espnow_singleton) = self;
 
     return self;
 }
@@ -180,7 +176,7 @@ recv_cb(uint8_t *mac_addr, uint8_t *data, uint8_t len);
 // Initialise the Espressif ESPNOW software stack, register callbacks and
 // allocate the recv data buffers.
 STATIC mp_obj_t espnow_init(size_t n_args, const mp_obj_t *args) {
-    esp_espnow_obj_t *self = espnow_singleton;
+    esp_espnow_obj_t *self = MP_STATE_PORT(espnow_singleton);
     if (self->initialised) {
         return mp_const_none;
     }
@@ -201,9 +197,11 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(espnow_init_obj, 1, 2, espnow_init);
 // ESPNow.deinit()
 // De-initialise the Espressif ESPNOW software stack, disable callbacks and
 // deallocate the recv data buffers.
-STATIC mp_obj_t espnow_deinit(mp_obj_t _) {
-    esp_espnow_obj_t *self = espnow_singleton;
-    if (!self->initialised) {
+// This is also called from main.c:mp_reset() to deinitialise the espnow stack
+// after a soft or hard reset.
+mp_obj_t espnow_deinit(mp_obj_t _) {
+    esp_espnow_obj_t *self = MP_STATE_PORT(espnow_singleton);
+    if (self == NULL || !self->initialised) {
         return mp_const_none;
     }
     esp_now_unregister_recv_cb();
@@ -229,9 +227,9 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_2(espnow_set_pmk_obj, espnow_set_pmk);
 // Triggered when receipt of a sent packet is acknowledged (or not)
 // If required, save the response in the ring buffer
 STATIC void send_cb(uint8_t *mac_addr, uint8_t status) {
-    espnow_singleton->sent_responses++;
+    MP_STATE_PORT(espnow_singleton)->sent_responses++;
     if (status == ESP_NOW_SEND_SUCCESS) {
-        espnow_singleton->sent_successes++;
+        MP_STATE_PORT(espnow_singleton)->sent_successes++;
     }
 }
 
@@ -239,7 +237,7 @@ STATIC void send_cb(uint8_t *mac_addr, uint8_t status) {
 STATIC void recv_cb(
     uint8_t *mac_addr, uint8_t *msg, uint8_t msg_len) {
 
-    esp_espnow_obj_t *self = espnow_singleton;
+    esp_espnow_obj_t *self = MP_STATE_PORT(espnow_singleton);
     if (ESPNOW_HDR_LEN + msg_len >= buffer_free(self->recv_buffer)) {
         self->dropped_rx_pkts++;
         return;
@@ -249,7 +247,7 @@ STATIC void recv_cb(
 }
 
 static int _wait_for_recv_packet(size_t n_args, const mp_obj_t *args) {
-    esp_espnow_obj_t *self = espnow_singleton;
+    esp_espnow_obj_t *self = MP_STATE_PORT(espnow_singleton);
     size_t timeout = (
         (n_args > 1) ? mp_obj_get_int(args[1]) : self->recv_timeout);
     int msg_len;
@@ -271,7 +269,7 @@ static int _wait_for_recv_packet(size_t n_args, const mp_obj_t *args) {
 // Default timeout is set with ESPNow.config(timeout=milliseconds).
 // Returns None on timeout.
 STATIC mp_obj_t espnow_irecv(size_t n_args, const mp_obj_t *args) {
-    esp_espnow_obj_t *self = espnow_singleton;
+    esp_espnow_obj_t *self = MP_STATE_PORT(espnow_singleton);
 
     int msg_len = _wait_for_recv_packet(n_args, args);
     if (msg_len < 0) {
@@ -323,7 +321,7 @@ static void wait_for_response(esp_espnow_obj_t *self) {
 }
 
 STATIC mp_obj_t espnow_send(size_t n_args, const mp_obj_t *args) {
-    esp_espnow_obj_t *self = espnow_singleton;
+    esp_espnow_obj_t *self = MP_STATE_PORT(espnow_singleton);
 
     bool sync = (n_args > 3) ? mp_obj_get_int(args[3]) : true;
     if (sync) {
@@ -376,6 +374,8 @@ STATIC const mp_rom_map_elem_t esp_espnow_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_deinit), MP_ROM_PTR(&espnow_deinit_obj) },
     { MP_ROM_QSTR(MP_QSTR_irecv), MP_ROM_PTR(&espnow_irecv_obj) },
     { MP_ROM_QSTR(MP_QSTR_send), MP_ROM_PTR(&espnow_send_obj) },
+
+    // Peer management functions
     { MP_ROM_QSTR(MP_QSTR_set_pmk), MP_ROM_PTR(&espnow_set_pmk_obj) },
     { MP_ROM_QSTR(MP_QSTR_add_peer), MP_ROM_PTR(&espnow_add_peer_obj) },
     { MP_ROM_QSTR(MP_QSTR_del_peer), MP_ROM_PTR(&espnow_del_peer_obj) },
@@ -443,5 +443,3 @@ static uint8_t *_get_bytes_len(mp_obj_t obj, size_t len) {
     }
     return (uint8_t *)bufinfo.buf;
 }
-
-#endif // MICROPY_ESP8266_ESPNOW

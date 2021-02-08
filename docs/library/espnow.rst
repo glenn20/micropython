@@ -198,7 +198,7 @@ For example::
     Wait for an incoming message and return:
 
     - ``None`` if ``timeout`` is reached before a message is received, or
-    - a "callee-owned" tuple of `bytearray`: ``(mac, message)``, where:
+    - a `callee-owned tuple` of `bytearray`: ``(mac, message)``, where:
 
       - ``mac`` is the mac address of the sending device (peer) and
 
@@ -209,7 +209,7 @@ For example::
 
     **Note**: Equivalent to `recv()<ESPNow.recv()>`, except that
     `irecv()<ESPNow.irecv()>` will
-    return a "callee-owned" tuple of bytearrays.
+    return a `callee-owned tuple` of bytearrays.
     That is, memory will be allocated once for the tuple and bytearrays on
     invocation of `espnow.ESPNow()<ESPNow()>` and reused for subsequent calls to
     `irecv()<ESPNow.irecv()>`. You must make copies if you

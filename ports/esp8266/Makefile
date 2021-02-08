@@ -43,6 +43,12 @@ FLASH_SIZE ?= detect
 CROSS_COMPILE ?= xtensa-lx106-elf-
 ESP_SDK = $(shell $(CC) -print-sysroot)/usr
 
+# Support ESPNOW by default on the ESP8266
+MICROPY_ESPNOW ?= 1
+ifeq ($(MICROPY_ESPNOW),1)
+CFLAGS_MOD += -DMICROPY_ESPNOW=1
+endif
+
 INC += -I.
 INC += -I$(TOP)
 INC += -I$(BUILD)
@@ -63,7 +69,10 @@ CFLAGS = $(INC) -Wall -Wpointer-arith -Werror -std=gnu99 -nostdlib -DUART_OS=$(U
 
 LD_FILES ?= boards/esp8266_2m.ld
 LDFLAGS = -nostdlib -T $(LD_FILES) -Map=$(@:.elf=.map) --cref
-LIBS = -L$(ESP_SDK)/lib -lmain -ljson -llwip_open -lpp -lnet80211 -lwpa -lphy -lnet80211 -lespnow $(LDFLAGS_MOD)
+LIBS = -L$(ESP_SDK)/lib -lmain -ljson -llwip_open -lpp -lnet80211 -lwpa -lphy -lnet80211 $(LDFLAGS_MOD)
+ifeq ($(MICROPY_ESPNOW),1)
+LIBS += -lespnow
+endif
 
 LIBGCC_FILE_NAME = $(shell $(CC) $(CFLAGS) -print-libgcc-file-name)
 LIBS += -L$(dir $(LIBGCC_FILE_NAME)) -lgcc
@@ -103,7 +112,6 @@ SRC_C = \
 	machine_wdt.c \
 	machine_hspi.c \
 	modesp.c \
-	esp_espnow.c \
 	modnetwork.c \
 	modutime.c \
 	moduos.c \
@@ -113,6 +121,11 @@ SRC_C = \
 	hspi.c \
 	$(wildcard $(BOARD_DIR)/*.c) \
 	$(SRC_MOD)
+
+ifeq ($(MICROPY_ESPNOW),1)
+SRC_C += \
+	esp_espnow.c
+endif
 
 EXTMOD_SRC_C = $(addprefix extmod/,\
 	modlwip.c \
