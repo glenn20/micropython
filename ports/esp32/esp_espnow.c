@@ -203,6 +203,7 @@ mp_obj_t espnow_deinit(mp_obj_t _) {
     self->initialised = 0;
     buffer_release(self->recv_buffer);
     self->peer_count = 0;   // esp_now_deinit() removes all peers.
+    self->sent_packets = self->sent_responses;
 
     return mp_const_none;
 }
@@ -267,6 +268,7 @@ STATIC mp_obj_t espnow_clear(const mp_obj_t _, const mp_obj_t arg) {
     }
     buffer_flush(self->recv_buffer);
     buffer_print("Resp", self->recv_buffer);
+    self->sent_packets = self->sent_responses;
     return mp_const_none;
 }
 MP_DEFINE_CONST_FUN_OBJ_2(espnow_clear_obj, espnow_clear);
@@ -442,7 +444,7 @@ static void _wait_for_pending_responses(esp_espnow_obj_t *self) {
 // Send an ESPNow message to the peer_addr and optionally wait for the
 // send response.
 // Returns the number of "Not received" responses (which may be more than
-// one if the send is a broadcast).
+// one if the send is to all peers).
 static int _do_espnow_send(
     const uint8_t *peer_addr, const uint8_t *message, size_t length, bool sync) {
 
@@ -466,7 +468,8 @@ static int _do_espnow_send(
     if (e != ESP_OK) {
         check_esp_err(e);
     }
-    // Increment the sent packet count. Broadcasts send to all peers.
+    // Increment the sent packet count. If peer_addr==NULL msg will be
+    // sent to all peers EXCEPT the broadcast adress.
     self->sent_packets += ((peer_addr == NULL) ? self->peer_count : 1);
     if (sync) {
         _wait_for_pending_responses(self);
@@ -478,7 +481,7 @@ static int _do_espnow_send(
 // ESPNow.send(peer_addr, message, [sync (=true)])
 // ESPNow.send(message)
 // Send a message to the peer's mac address. Optionally wait for a response.
-// If peer_addr == None, send to all registered peers (broadcast).
+// If peer_addr == None, send to all registered peers.
 // If sync == True, wait for response after sending.
 // Returns:
 //   True  if sync==False and message sent successfully.
@@ -556,6 +559,14 @@ STATIC void _update_peer_count() {
     esp_now_peer_num_t peer_num = {0};
     check_esp_err(esp_now_get_peer_num(&peer_num));
     self->peer_count = peer_num.total_num;
+
+    // Check if the the broadcast MAC address is registered
+    uint8_t broadcast[ESP_NOW_ETH_ALEN] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+    esp_now_peer_info_t peer = {0};
+    if (esp_now_get_peer(broadcast, &peer) == ESP_OK) {
+        // Don't count the broadcast address
+        self->peer_count--;
+    }
 }
 
 // ESPNow.add_peer(peer_mac, [lmk, [channel, [ifidx, [encrypt]]]]) or
@@ -638,10 +649,9 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_2(espnow_del_peer_obj, espnow_del_peer);
 //     ((peer_addr, lmk, channel, ifidx, encrypt),
 //      (peer_addr, lmk, channel, ifidx, encrypt), ...)
 STATIC mp_obj_t espnow_get_peers(mp_obj_t _) {
-    esp_now_peer_num_t peer_num;
-    check_esp_err(esp_now_get_peer_num(&peer_num));
+    esp_espnow_obj_t *self = MP_STATE_PORT(espnow_singleton);
 
-    mp_obj_tuple_t *peerinfo_tuple = mp_obj_new_tuple(peer_num.total_num, NULL);
+    mp_obj_tuple_t *peerinfo_tuple = mp_obj_new_tuple(self->peer_count, NULL);
     esp_now_peer_info_t peer = {0};
     bool from_head = true;
     int count = 0;
@@ -655,7 +665,7 @@ STATIC mp_obj_t espnow_get_peers(mp_obj_t _) {
             (peer.encrypt) ? mp_const_true : mp_const_false,
         };
         peerinfo_tuple->items[count] = mp_obj_new_tuple(5, items);
-        if (++count >= peer_num.total_num) {
+        if (++count >= self->peer_count) {
             break;          // Should not happen
         }
     }

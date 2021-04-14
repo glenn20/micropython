@@ -4,9 +4,13 @@
 .. module:: espnow
    :synopsis: ESP-NOW wireless protocol support
 
-This module provides an interface to the ESP-NOW protocol provided by Espressif
-on ESP32 and ESP8266 devices. Some calls are only available on the ESP32 due to
-code size restrictions on the ESP8266 and differences in the Espressif API.
+This module provides an interface to the
+`ESP-Now
+<https://docs.espressif.com/projects/esp-idf/en/v4.0.2/
+api-reference/network/esp_now.html>`_
+protocol provided by Espressif on ESP32 and ESP8266 devices. Some calls are only
+available on the ESP32 due to code size restrictions on the ESP8266 and
+differences in the Espressif API.
 
 Load this module from the :doc:`esp` module. A simple example would be:
 
@@ -165,7 +169,7 @@ For example::
         Always returns ``True``.
 
     If ``mac`` is ``None`` the message will be sent to all
-    registered peers as an ESP-Now broadcast.
+    registered peers (ESP32 only).
 
     **Note**: A peer will respond with success if it's wifi interface is
     active() and set to the same channel as the sender, regardless of whether
@@ -232,6 +236,21 @@ For example::
 
     **Note**: Dropped packets will still be acknowledged to the sender as
     received.
+
+Broadcasts
+----------
+
+All active ESP-Now clients accept messages sent to their MAC address or to the
+``broadcast`` MAC address (``b'\\xff\\xff\\xff\\xff\\xff\\xff'``).
+
+To `send()<ESPNow.send()>` a broadcast message, the ``broadcast``
+MAC address must first be registered using `add_peer()<ESPNow.add_peer()>`.
+`send()<ESPNow.send()>` will always return ``True`` for broadcasts, regardless
+of whether any devices receive the message.
+
+**Note**: `ESPNow.send(None, msg)<ESPNow.send()>` will send to all registered
+peers *except* the broadcast address. To send a broadcast message, you must
+specify the ``broadcast`` MAC address as the peer.
 
 Iteration over ESPNow
 ---------------------
@@ -397,3 +416,46 @@ Constants
           espnow.KEY_LEN              (=16)
           espnow.MAX_TOTAL_PEER_NUM   (=20)
           espnow.MAX_ENCRYPT_PEER_NUM (=6)
+
+Exceptions
+----------
+
+If the underlying Espressif ESPNow software stack returns an error code,
+the micropython ESPNow module will throw an ``OSError(errnum, errstring)``
+exception where ``errstring`` is set to the name of one of the error codes
+identified in the
+`Espressif ESP-Now docs
+<https://docs.espressif.com/projects/esp-idf/en/v4.0.2/
+api-reference/network/esp_now.html#api-reference>`_.
+
+Some of these error string values include:
+
+- ``'ESP_ERR_ESPNOW_NOT_INIT``: The ESPNow interface has not been
+  initialised (see `ESPNow.init()<ESPNow.init()>`).
+- ``'ESP_ERR_ESPNOW_NOT_FOUND'``: The peer mac address
+  has not been registered (see `ESPNow.add_peer()<ESPNow.add_peer()>`).
+- ``'ESP_ERR_ESPNOW_IF'``: The wifi interface (STA_IF or
+  AP_IF) registered for the peer is not `active()<network.WLAN.active>`.
+  Use `ESPNow.get_peer(mac)<ESPNow.get_peer()>` to confirm which interface
+  is registered.
+- ``'ESP_ERR_ESPNOW_NO_MEM'``: Allow time for ESPNow buffers to be drained
+  and try again.
+- ``'ESP_ERR_ESPNOW_FULL'``: The maximum number of peers are already registered.
+- ``'ESP_ERR_ESPNOW_EXIST'``: Attempt to call ``add_peer()`` for a peer which
+  is already registered.
+
+  Example::
+
+    try:
+        e.send(peer, 'Hello')
+    except OSError as err:
+        if len(err.args) < 2:
+            raise err
+        if err.args[1] == 'ESP_ERR_ESPNOW_NOT_INIT':
+            e.init()
+        elif err.args[1] == 'ESP_ERR_ESPNOW_NOT_FOUND'
+            e.add_peer(peer)
+        elif err.args[1] == 'ESP_ERR_ESPNOW_IF'
+            network.WLAN(network.STA_IF).active(True)
+        else:
+            raise err
