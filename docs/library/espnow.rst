@@ -246,7 +246,8 @@ All active ESP-Now clients accept messages sent to their MAC address or to the
 To `send()<ESPNow.send()>` a broadcast message, the ``broadcast``
 MAC address must first be registered using `add_peer()<ESPNow.add_peer()>`.
 `send()<ESPNow.send()>` will always return ``True`` for broadcasts, regardless
-of whether any devices receive the message.
+of whether any devices receive the message. It is not permitted to encrypt
+messages sent to the ``broadcast`` address.
 
 **Note**: `ESPNow.send(None, msg)<ESPNow.send()>` will send to all registered
 peers *except* the broadcast address. To send a broadcast message, you must
@@ -444,7 +445,7 @@ Some of these error string values include:
 - ``'ESP_ERR_ESPNOW_EXIST'``: Attempt to call ``add_peer()`` for a peer which
   is already registered.
 
-  Example::
+Example::
 
     try:
         e.send(peer, 'Hello')
@@ -459,3 +460,74 @@ Some of these error string values include:
             network.WLAN(network.STA_IF).active(True)
         else:
             raise err
+
+ESPNow and Wifi
+---------------
+
+ESPNow messages may be sent and received on any `active()<network.WLAN.active>`
+`WLAN<network.WLAN()>` interface (``network.STA_IF`` or ``network.AP_IF``),
+even if that interface is also connected to a wifi network or configured as
+an access point. However, sending ESPNow packets to a STA_IF interface which
+is also connected to a wifi access point (AP) is much less reliable.
+This is due to the default power saving mode (WIFI_PS_MIN_MODEM) of the
+ESP32 when connected to an AP.
+
+There are several options to improve reliability of receiving ESPNow packets when
+also connected to a wifi network:
+
+1. Disable the power-saving mode on the STA_IF interface
+
+  - Use ``network.WLAN(network.STA_IF).config(power=network.WIFI_PS_NONE)``
+  - This requires the ESPNow patches on ESP32 (not supported in micropython v1.15).
+
+2. Use the AP_IF interface to send/receive ESPNow traffic, or
+
+  - Register all peers with ``e.add_peer(peer, lmk, channel, network.AP_IF)``
+  - Configure peers to send messages to the ``AP_IF`` mac address
+  - This will also activate the ESP32 as an access point!
+
+3. Configure ESPNow clients to retry sending messages
+
+Example 1 (Disable power saving mode on STA_IF)::
+
+  import network
+  from esp import espnow
+
+  peer = b'0\xaa\xaa\xaa\xaa\xaa'        # MAC address of peer
+  e = espnow.ESPNow()
+  e.init()
+
+  w0 = network.WLAN(network.STA_IF)
+  w0.active(True)
+  w0.connect('myssid', 'myppassword')
+  while not w0.isconnected():            # Wait until connected...
+      time.sleep(0.1)
+  w0.config(power=network.WIFI_PS_NONE)  # ..then disable power saving
+
+  e.add_peer(peer)                       # Register peer on STA_IF
+  e.send(peer, b'ping')                  # Message will be from STA_IF mac address
+
+  print('Send me messages at:', w0.config('mac'))
+
+Example 2 (Send and receive ESPNow traffic on AP_IF interface)::
+
+  import network
+  from esp import espnow
+
+  peer = b'feedee'                       # MAC address of peer
+  e = espnow.ESPNow()
+  e.init()
+
+  w0 = network.WLAN(network.STA_IF)
+  w0.config(channel=6)
+  w0.active(True)
+  w0.connect('myssid', 'myppassword')
+
+  w1 = network.WLAN(network.AP_IF)
+  w1.config(channel=11, hidden=True)      # Use different channel from STA_IF
+  w1.active()
+
+  e.add_peer(peer, None, None, network.AP_IF)  # Register peer on AP_IF
+  e.send(peer, b'ping')                   # Message will be from AP_IF mac address
+
+  print('Send me messages at:', w1.config('mac'))

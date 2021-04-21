@@ -598,6 +598,10 @@ STATIC mp_obj_t esp_config(size_t n_args, const mp_obj_t *args, mp_map_t *kwargs
                         ESP_EXCEPTIONS(esp_wifi_set_protocol(self->if_id, mp_obj_get_int(kwargs->table[i].value)));
                         break;
                     }
+                    case QS(MP_QSTR_power): {
+                        ESP_EXCEPTIONS(esp_wifi_set_ps(mp_obj_get_int(kwargs->table[i].value)));
+                        break;
+                    }
                     case QS(MP_QSTR_essid): {
                         req_if = WIFI_IF_AP;
                         size_t len;
@@ -684,6 +688,12 @@ STATIC mp_obj_t esp_config(size_t n_args, const mp_obj_t *args, mp_map_t *kwargs
                 default:
                     goto unknown;
             }
+        }
+        case QS(MP_QSTR_power): {
+            wifi_ps_type_t ps_type;
+            ESP_EXCEPTIONS(esp_wifi_get_ps(&ps_type));
+            val = MP_OBJ_NEW_SMALL_INT(ps_type);
+            break;
         }
         case QS(MP_QSTR_protocol): {
             uint8_t protocol_bitmap;
@@ -786,6 +796,10 @@ STATIC const mp_rom_map_elem_t mp_module_network_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_MODE_11G), MP_ROM_INT(WIFI_PROTOCOL_11G) },
     { MP_ROM_QSTR(MP_QSTR_MODE_11N), MP_ROM_INT(WIFI_PROTOCOL_11N) },
     { MP_ROM_QSTR(MP_QSTR_MODE_LR), MP_ROM_INT(WIFI_PROTOCOL_LR) },
+
+    { MP_ROM_QSTR(MP_QSTR_WIFI_PS_NONE), MP_ROM_INT(WIFI_PS_NONE) },
+    { MP_ROM_QSTR(MP_QSTR_WIFI_PS_MIN_MODEM), MP_ROM_INT(WIFI_PS_MIN_MODEM) },
+    { MP_ROM_QSTR(MP_QSTR_WIFI_PS_MAX_MODEM), MP_ROM_INT(WIFI_PS_MAX_MODEM) },
 
     { MP_ROM_QSTR(MP_QSTR_AUTH_OPEN), MP_ROM_INT(WIFI_AUTH_OPEN) },
     { MP_ROM_QSTR(MP_QSTR_AUTH_WEP), MP_ROM_INT(WIFI_AUTH_WEP) },
