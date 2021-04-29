@@ -132,7 +132,12 @@ Configuration
     Set the Primary Master Key (PMK) which is used to encrypt the Local Master
     Keys (LMK) for encrypting ESPNow data traffic. If this is not set, a default
     PMK is used by the underlying Espressif esp_now software stack. The ``pmk``
-    argument bust be a byte string of length `espnow.KEY_LEN` (16 bytes).
+    argument bust be a byte string of length `espnow.KEY_LEN` (16 bytes). Note:
+    messages will only be encrypted if ``lmk`` is set in `ESPNow.add_peer()`
+    (see
+    `Security
+    <https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/network/esp_now.html#security>`_
+    ).
 
 Sending and Receiving Data
 --------------------------
@@ -475,18 +480,18 @@ ESP32 when connected to an AP.
 There are several options to improve reliability of receiving ESPNow packets when
 also connected to a wifi network:
 
-1. Disable the power-saving mode on the STA_IF interface
+1. Disable the power-saving mode on the STA_IF interface:
 
-  - Use ``network.WLAN(network.STA_IF).config(power=network.WIFI_PS_NONE)``
+  - Use ``WLAN(STA_IF).config(ps_mode=WIFI_PS_NONE)``
   - This requires the ESPNow patches on ESP32 (not supported in micropython v1.15).
 
-2. Use the AP_IF interface to send/receive ESPNow traffic, or
+2. Use the AP_IF interface to send/receive ESPNow traffic:
 
   - Register all peers with ``e.add_peer(peer, lmk, channel, network.AP_IF)``
   - Configure peers to send messages to the ``AP_IF`` mac address
   - This will also activate the ESP32 as an access point!
 
-3. Configure ESPNow clients to retry sending messages
+3. Configure ESPNow clients to retry sending messages.
 
 Example 1 (Disable power saving mode on STA_IF)::
 
@@ -502,7 +507,7 @@ Example 1 (Disable power saving mode on STA_IF)::
   w0.connect('myssid', 'myppassword')
   while not w0.isconnected():            # Wait until connected...
       time.sleep(0.1)
-  w0.config(power=network.WIFI_PS_NONE)  # ..then disable power saving
+  w0.config(ps_mode=network.WIFI_PS_NONE)  # ..then disable power saving
 
   e.add_peer(peer)                       # Register peer on STA_IF
   e.send(peer, b'ping')                  # Message will be from STA_IF mac address
@@ -524,10 +529,31 @@ Example 2 (Send and receive ESPNow traffic on AP_IF interface)::
   w0.connect('myssid', 'myppassword')
 
   w1 = network.WLAN(network.AP_IF)
-  w1.config(channel=11, hidden=True)      # Use different channel from STA_IF
-  w1.active()
+  w1.config(hidden=True)                 # AP_IF operates on same channel as STA_IF
+  w1.active(True)
 
   e.add_peer(peer, None, None, network.AP_IF)  # Register peer on AP_IF
-  e.send(peer, b'ping')                   # Message will be from AP_IF mac address
+  e.send(peer, b'ping')                  # Message will be from AP_IF mac address
 
   print('Send me messages at:', w1.config('mac'))
+
+Other issues to take care with when using ESPNow with wifi are:
+
+- If using the ESP32 Access Point (AP_IF) while also connected to another
+  Access Point (on STA_IF), the AP_IF will always operate on the same channel
+  as the STA_IF regardless of the channel you set for the AP_IF
+  (see
+  `Attention Note 3
+  <https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/network/esp_wifi.html#_CPPv419esp_wifi_set_config16wifi_interface_tP13wifi_config_t>`_
+  ).
+
+- Some versions of the ESP IDF only permit sending ESPNow packets from the
+  STA_IF interface to peers which have been registered on the same wifi
+  channel as the STA_IF::
+
+    ESPNOW: Peer channel is not equal to the home channel, send fail!
+
+- Some versions of the ESP IDF don't permit setting the channel of the STA_IF
+  at all, other than by connecting to an Access Point (This seems to be fixed
+  in IDF 4+). Micropython versions without the ESPNow patches also disallow
+  setting the channel of the STA_IF.
