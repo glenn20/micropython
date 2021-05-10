@@ -104,9 +104,6 @@ typedef struct _esp_espnow_obj_t {
     mp_obj_array_t *irecv_msg;
     int initialised;
     size_t sent_packets;
-    volatile size_t recv_packets;
-    size_t dropped_rx_pkts;
-    size_t recv_timeout;        // Timeout for recv_wait()/poll()
     volatile size_t sent_responses;
     volatile size_t sent_successes;
 } esp_espnow_obj_t;
@@ -143,7 +140,6 @@ STATIC mp_obj_t espnow_make_new(const mp_obj_type_t *type, size_t n_args,
     }
     esp_espnow_obj_t *self = m_malloc0(sizeof(esp_espnow_obj_t));
     self->base.type = &esp_espnow_type;
-    self->recv_timeout = DEFAULT_RECV_TIMEOUT;
 
     // Allocate and initialise the "callee-owned" tuple for irecv().
     uint8_t msg_tmp[ESP_NOW_MAX_DATA_LEN], peer_tmp[ESP_NOW_ETH_ALEN];
@@ -239,17 +235,15 @@ STATIC void recv_cb(
 
     esp_espnow_obj_t *self = MP_STATE_PORT(espnow_singleton);
     if (ESPNOW_HDR_LEN + msg_len >= buffer_free(self->recv_buffer)) {
-        self->dropped_rx_pkts++;
         return;
     }
     _buf_put_recv_data(self->recv_buffer, mac_addr, msg, msg_len);
-    self->recv_packets++;
 }
 
 static int _wait_for_recv_packet(size_t n_args, const mp_obj_t *args) {
     esp_espnow_obj_t *self = MP_STATE_PORT(espnow_singleton);
     size_t timeout = (
-        (n_args > 1) ? mp_obj_get_int(args[1]) : self->recv_timeout);
+        (n_args > 1) ? mp_obj_get_int(args[1]) : DEFAULT_RECV_TIMEOUT);
     int msg_len;
     int64_t start = mp_hal_ticks_ms();
     while ((msg_len = _buf_peek_message_length(self->recv_buffer)) == BUF_EMPTY &&
