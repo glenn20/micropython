@@ -21,10 +21,9 @@ sync = True
 def echo_server(e):
     peers = []
     while True:
-        resp = e.irecv(timeout)
-        if resp is None:
+        peer, msg = e.irecv(timeout)
+        if peer is None:
             return
-        peer, msg = resp
         if peer not in peers:
             peers.append(peer)
             e.add_peer(peer)

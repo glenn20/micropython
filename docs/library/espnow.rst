@@ -48,10 +48,10 @@ Load this module from the :doc:`esp` module. A simple example would be:
         e.add_peer(peer)
 
         while True:
-            msg = e.irecv()     # Available on ESP32 and ESP8266
+            host, msg = e.irecv()     # Available on ESP32 and ESP8266
             if msg:             # msg == None if timeout in irecv()
-                print(msg)
-                if msg[1] == b'end':
+                print(host, msg)
+                if msg == b'end':
                     break
 
 .. note:: This module is still under development and its classes, functions,
@@ -156,7 +156,9 @@ For example::
             ESPNow.send(msg)    (ESP32 only)
 
     Send the data contained in ``msg`` to the peer with given network ``mac``
-    address. In the second form, ``mac=None`` and ``sync=True``.
+    address. In the second form, ``mac=None`` and ``sync=True``. The peer must
+    be registered with `ESPNow.add_peer()<ESPNow.add_peer()>` (see below)
+    before the message can be sent.
 
     Arguments:
 
@@ -173,13 +175,16 @@ For example::
         Responses from the peers will be discarded.
         Always returns ``True``.
 
-    If ``mac`` is ``None`` the message will be sent to all
-    registered peers (ESP32 only).
+    If ``mac`` is ``None`` (ESP32 only) the message will be sent to all
+    registered peers, except any broadcast or multicast MAC addresses.
 
-    **Note**: A peer will respond with success if it's wifi interface is
-    active() and set to the same channel as the sender, regardless of whether
-    it has initialised it's ESP-Now system or is actively listening for ESP-Now
-    traffic (see the Espressif ESP-Now docs).
+    **Note**: A peer will respond with success if its wifi interface is
+    `active()<network.WLAN.active>` and set to the same channel as the sender,
+    regardless of whether it has initialised it's ESP-Now system or is
+    actively listening for ESP-Now traffic (see the Espressif ESP-Now docs).
+
+    **Note**: See **Exceptions** below for a description of the exceptions
+    which may be raised.
 
 .. method:: ESPNow.recv([timeout]) (ESP32 only)
 
@@ -187,8 +192,9 @@ For example::
 
     Wait for an incoming message and return:
 
-    - ``None`` if ``timeout`` is reached before a message is received, or
-    - a newly allocated tuple of `bytes`: ``(mac, message)``, where:
+    - ``(None, None)`` if ``timeout`` is reached before a message is received, or
+
+    - ``(mac, message)``: a newly allocated tuple of `bytearray` where:
 
       - ``mac`` is the mac address of the sending device (peer) and
 
@@ -204,10 +210,11 @@ For example::
 
 .. method:: ESPNow.irecv([timeout])
 
-    Wait for an incoming message and return:
+    Wait for an incoming message and return a `callee-owned tuple` of:
 
-    - ``None`` if ``timeout`` is reached before a message is received, or
-    - a `callee-owned tuple` of `bytearray`: ``(mac, message)``, where:
+    - ``(None, None)`` if ``timeout`` is reached before a message is received, or
+
+    - ``(mac, message)``: a tuple of `bytearray` where:
 
       - ``mac`` is the mac address of the sending device (peer) and
 
@@ -223,11 +230,17 @@ For example::
     invocation of `espnow.ESPNow()<ESPNow()>` and reused for subsequent calls to
     `irecv()<ESPNow.irecv()>`. You must make copies if you
     wish to keep the values across subsequent calls to `irecv()<ESPNow.irecv()>`.
-    `irecv()<ESPNow.irecv()>` is more efficient on memory constrained
-    microcontrollers like the ESP32 and ESP8266.
+    So, `irecv()<ESPNow.irecv()>` is more memory efficient than
+    `recv()<ESPNow.recv()>` on memory constrained microcontrollers like the
+    ESP32 and ESP8266.
 
-    On timeout, `irecv()` will return `None` and set the length of the
+    On timeout, `irecv()` will return ``(None, None)`` and set the length of the
     callee-owned ``message`` bytearray to zero.
+
+.. method:: ESPNow.poll() (ESP32 only)
+
+    Return ``True`` if data is available to be read with ``recv()/irecv()``.
+    Return ``False`` otherwise.
 
 .. method:: ESPNow.stats() (ESP32 only)
 
@@ -246,13 +259,14 @@ Broadcasts
 ----------
 
 All active ESP-Now clients accept messages sent to their MAC address or to the
-``broadcast`` MAC address (``b'\\xff\\xff\\xff\\xff\\xff\\xff'``).
+``broadcast`` MAC address (``b'\\xff\\xff\\xff\\xff\\xff\\xff'``) or any
+multicast MAC address.
 
 To `send()<ESPNow.send()>` a broadcast message, the ``broadcast``
 MAC address must first be registered using `add_peer()<ESPNow.add_peer()>`.
 `send()<ESPNow.send()>` will always return ``True`` for broadcasts, regardless
 of whether any devices receive the message. It is not permitted to encrypt
-messages sent to the ``broadcast`` address.
+messages sent to the ``broadcast`` address or any multicast address.
 
 **Note**: `ESPNow.send(None, msg)<ESPNow.send()>` will send to all registered
 peers *except* the broadcast address. To send a broadcast message, you must
@@ -493,7 +507,7 @@ also connected to a wifi network:
 
 3. Configure ESPNow clients to retry sending messages.
 
-Example 1 (Disable power saving mode on STA_IF)::
+**Example 1:** Disable power saving mode on STA_IF::
 
   import network
   from esp import espnow
@@ -514,7 +528,7 @@ Example 1 (Disable power saving mode on STA_IF)::
 
   print('Send me messages at:', w0.config('mac'))
 
-Example 2 (Send and receive ESPNow traffic on AP_IF interface)::
+**Example 2:** Send and receive ESPNow traffic on AP_IF interface::
 
   import network
   from esp import espnow

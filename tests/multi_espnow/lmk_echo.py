@@ -36,10 +36,9 @@ def echo_server(e):
     peers = []
     while True:
         # Wait for messages from the client
-        resp = e.irecv(timeout)
-        if resp is None:
+        peer, msg = e.irecv(timeout)
+        if peer is None:
             return
-        peer, msg = resp
         if peer not in peers:
             # If this is first message, add the peer unencrypted
             e.add_peer(peer)
@@ -71,12 +70,11 @@ def echo_test(e, peer, msg, sync):
         print("ERROR: OSError:")
         return
 
-    resp = e.irecv(timeout)
-    if resp is None:
+    p2, msg2 = e.irecv(timeout)
+    if p2 is None:
         print("ERROR: No response from server.")
         raise SystemExit
 
-    p2, msg2 = resp
     print("OK" if msg2 == msg else "ERROR: Received != Sent")
 
 

@@ -150,8 +150,6 @@ STATIC mp_obj_t espnow_make_new(const mp_obj_type_t *type, size_t n_args,
     self->irecv_peer = MP_OBJ_TO_PTR(mp_obj_new_bytearray(ESP_NOW_ETH_ALEN, peer_tmp));
     self->irecv_msg = MP_OBJ_TO_PTR(mp_obj_new_bytearray(ESP_NOW_MAX_DATA_LEN, msg_tmp));
     self->irecv_tuple = mp_obj_new_tuple(2, NULL);
-    self->irecv_tuple->items[0] = MP_OBJ_FROM_PTR(self->irecv_peer);
-    self->irecv_tuple->items[1] = MP_OBJ_FROM_PTR(self->irecv_msg);
 
     // Set the global singleton pointer for the espnow protocol.
     MP_STATE_PORT(espnow_singleton) = self;
@@ -199,6 +197,8 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(espnow_init_obj, 1, 2, espnow_init);
 // deallocate the recv data buffers.
 // This is also called from main.c:mp_reset() to deinitialise the espnow stack
 // after a soft or hard reset.
+// Note: this function is called from main.c:mp_task() to cleanup before
+// soft reset, so cannot be declared STATIC.
 mp_obj_t espnow_deinit(mp_obj_t _) {
     esp_espnow_obj_t *self = MP_STATE_PORT(espnow_singleton);
     if (self == NULL || !self->initialised) {
@@ -274,7 +274,9 @@ STATIC mp_obj_t espnow_irecv(size_t n_args, const mp_obj_t *args) {
     int msg_len = _wait_for_recv_packet(n_args, args);
     if (msg_len < 0) {
         self->irecv_msg->len = 0;
-        return mp_const_none;   // Timed out - just return None
+        self->irecv_tuple->items[0] = mp_const_none;
+        self->irecv_tuple->items[1] = mp_const_none;
+        return MP_OBJ_FROM_PTR(self->irecv_tuple); // Timed out - just return None
     }
     if (!_buf_get_recv_data(
         self->recv_buffer,
@@ -284,9 +286,11 @@ STATIC mp_obj_t espnow_irecv(size_t n_args, const mp_obj_t *args) {
         mp_raise_ValueError(MP_ERROR_TEXT("Buffer error"));
     }
     self->irecv_msg->len = msg_len;
+    self->irecv_tuple->items[0] = MP_OBJ_FROM_PTR(self->irecv_peer);
+    self->irecv_tuple->items[1] = MP_OBJ_FROM_PTR(self->irecv_msg);
     return MP_OBJ_FROM_PTR(self->irecv_tuple);
 }
-MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(espnow_irecv_obj, 1, 2, espnow_irecv);
+STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(espnow_irecv_obj, 1, 2, espnow_irecv);
 
 // ESPNow.send(peer, message, [sync=True]) can use "synchronised" or
 // "fire and forget" mode.
