@@ -517,12 +517,12 @@ STATIC mp_obj_t espnow_recv(size_t n_args, const mp_obj_t *args) {
 STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(espnow_recv_obj, 1, 2, espnow_recv);
 
 // Test if data is available to read from the buffers
-STATIC mp_obj_t espnow_poll(const mp_obj_t _) {
+STATIC mp_obj_t espnow_any(const mp_obj_t _) {
     esp_espnow_obj_t *self = _get_singleton(INITIALISED);
 
     return buffer_empty(self->recv_buffer) ? mp_const_false : mp_const_true;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(espnow_poll_obj, espnow_poll);
+STATIC MP_DEFINE_CONST_FUN_OBJ_1(espnow_any_obj, espnow_any);
 
 // Used by _do_espnow_send() for sends() with sync==True.
 // Wait till all pending sent packet responses have been received.
@@ -882,7 +882,7 @@ STATIC const mp_rom_map_elem_t esp_espnow_locals_dict_table[] = {
     { MP_ROM_QSTR(MP_QSTR_recv), MP_ROM_PTR(&espnow_recv_obj) },
     { MP_ROM_QSTR(MP_QSTR_irecv), MP_ROM_PTR(&espnow_irecv_obj) },
     { MP_ROM_QSTR(MP_QSTR_send), MP_ROM_PTR(&espnow_send_obj) },
-    { MP_ROM_QSTR(MP_QSTR_poll), MP_ROM_PTR(&espnow_poll_obj) },
+    { MP_ROM_QSTR(MP_QSTR_any), MP_ROM_PTR(&espnow_any_obj) },
 
     // Peer management functions
     { MP_ROM_QSTR(MP_QSTR_set_pmk), MP_ROM_PTR(&espnow_set_pmk_obj) },
