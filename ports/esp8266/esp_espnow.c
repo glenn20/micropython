@@ -220,7 +220,7 @@ mp_obj_t espnow_deinit(mp_obj_t _) {
     esp_espnow_obj_t *self = _get_singleton(0);
     if (self != NULL && self->recv_buffer != NULL) {
         esp_now_unregister_recv_cb();
-        // esp_now_unregister_send_cb();
+        //esp_now_unregister_send_cb();
         esp_now_deinit();
         buffer_release(self->recv_buffer);
         self->recv_buffer = NULL;

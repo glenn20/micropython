@@ -181,7 +181,7 @@ STATIC void recv_cb(const uint8_t *mac_addr, const uint8_t *data, int len);
 // Initialise the Espressif ESPNOW software stack, register callbacks and
 // allocate the recv data buffers.
 // Returns None.
-STATIC mp_obj_t espnow_init(mp_obj_t _) {
+static mp_obj_t espnow_init(mp_obj_t _) {
     esp_espnow_obj_t *self = _get_singleton(0);
     if (self->recv_buffer == NULL) {    // Already initialised
         self->recv_buffer = buffer_init(self->recv_buffer_size);
@@ -194,7 +194,6 @@ STATIC mp_obj_t espnow_init(mp_obj_t _) {
     }
     return mp_const_none;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(espnow_init_obj, espnow_init);
 
 // ESPNow.deinit(): De-initialise the ESPNOW software stack, disable callbacks
 // and deallocate the recv data buffers.
@@ -213,7 +212,19 @@ mp_obj_t espnow_deinit(mp_obj_t _) {
     }
     return mp_const_none;
 }
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(espnow_deinit_obj, espnow_deinit);
+
+STATIC mp_obj_t espnow_active(size_t n_args, const mp_obj_t *args) {
+    esp_espnow_obj_t *self = _get_singleton(0);
+    if (n_args > 1) {
+        if (mp_obj_is_true(args[1])) {
+            espnow_init(self);
+        } else {
+            espnow_deinit(self);
+        }
+    }
+    return self->recv_buffer != NULL ? mp_const_true : mp_const_false;
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(espnow_active_obj, 1, 2, espnow_active);
 
 // ESPNow.config(['param'|param=value, ..])
 // Get or set configuration values. Supported config params:
@@ -843,8 +854,7 @@ STATIC mp_obj_t espnow_peer_count(mp_obj_t _) {
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(espnow_peer_count_obj, espnow_peer_count);
 
 STATIC const mp_rom_map_elem_t esp_espnow_locals_dict_table[] = {
-    { MP_ROM_QSTR(MP_QSTR_init), MP_ROM_PTR(&espnow_init_obj) },
-    { MP_ROM_QSTR(MP_QSTR_deinit), MP_ROM_PTR(&espnow_deinit_obj) },
+    { MP_ROM_QSTR(MP_QSTR_active), MP_ROM_PTR(&espnow_active_obj) },
     { MP_ROM_QSTR(MP_QSTR_config), MP_ROM_PTR(&espnow_config_obj) },
     { MP_ROM_QSTR(MP_QSTR_stats), MP_ROM_PTR(&espnow_stats_obj) },
 
@@ -886,7 +896,7 @@ STATIC mp_uint_t espnow_stream_ioctl(mp_obj_t self_in, mp_uint_t request,
         return MP_STREAM_ERROR;
     }
     esp_espnow_obj_t *self = _get_singleton(0);
-    return (self->recv_buffer == NULL) ? 0 : // If not initialised
+    return (self->recv_buffer == NULL) ? 0 :  // If not initialised
            arg & (
                // If no data in the buffer, unset the Read ready flag
                (buffer_empty(self->recv_buffer) ? 0: MP_STREAM_POLL_RD) |
