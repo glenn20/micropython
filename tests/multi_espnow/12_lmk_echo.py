@@ -94,7 +94,7 @@ def echo_client(e, peer, msglens):
 def init(sta_active=True, ap_active=False):
     wlans = [network.WLAN(i) for i in [network.STA_IF, network.AP_IF]]
     e = espnow.ESPNow()
-    e.init()
+    e.active(True)
     e.set_pmk(default_pmk)
     wlans[0].active(sta_active)
     wlans[1].active(ap_active)
@@ -111,7 +111,7 @@ def instance0():
     multitest.next()
     echo_server(e)
     print("Server Done")
-    e.deinit()
+    e.active(False)
 
 
 # Client
@@ -127,4 +127,4 @@ def instance1():
     e.add_peer(peer, default_lmk)
     echo_client(e, peer, [250])
     echo_test(e, peer, b"!done", True)
-    e.deinit()
+    e.active(False)

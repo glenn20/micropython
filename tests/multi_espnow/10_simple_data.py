@@ -16,7 +16,7 @@ default_pmk = b"Micropyth0nRules"
 def init(sta_active=True, ap_active=False):
     wlans = [network.WLAN(i) for i in [network.STA_IF, network.AP_IF]]
     e = espnow.ESPNow()
-    e.init()
+    e.active(True)
     e.set_pmk(default_pmk)
     wlans[0].active(sta_active)
     wlans[1].active(ap_active)
@@ -36,7 +36,7 @@ def instance0():
     e.add_peer(peer)
     e.send(peer, msg2)
     print(bytes(msg2))
-    e.deinit()
+    e.active(False)
 
 
 # Client
@@ -50,4 +50,4 @@ def instance1():
     print(bytes(msg1))
     peer2, msg2 = e.irecv(10000)
     print(bytes(msg2))
-    e.deinit()
+    e.active(False)

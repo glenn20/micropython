@@ -68,7 +68,7 @@ def echo_client(e, peer, msglens):
 def init(sta_active=True, ap_active=False):
     wlans = [network.WLAN(i) for i in [network.STA_IF, network.AP_IF]]
     e = espnow.ESPNow()
-    e.init()
+    e.active(True)
     e.set_pmk(default_pmk)
     wlans[0].active(sta_active)
     wlans[1].active(ap_active)
@@ -84,7 +84,7 @@ def instance0():
     print("Server Start")
     echo_server(e)
     print("Server Done")
-    e.deinit()
+    e.active(False)
 
 
 # Client
@@ -106,4 +106,4 @@ def instance1():
         print("OK: Less than 1024 bytes consumed")
     else:
         print("Error: Memory consumed is", mem_end - mem_start)
-    e.deinit()
+    e.active(False)
