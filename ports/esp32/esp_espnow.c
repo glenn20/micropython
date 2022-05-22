@@ -108,7 +108,6 @@ typedef struct _esp_espnow_obj_t {
     size_t peer_count;              // Cache the # of peers for send(sync=True)
     mp_obj_t recv_cb;               // Callback when a packet is received
     mp_obj_tuple_t *irecv_tuple;    // Preallocated tuple for irecv()
-    mp_obj_tuple_t *none_tuple;     // Preallocated tuple for irecv()/recv()
     mp_obj_t peers_table;           // A dictionary of discovered peers
 } esp_espnow_obj_t;
 
@@ -160,9 +159,6 @@ STATIC mp_obj_t espnow_make_new(const mp_obj_type_t *type, size_t n_args,
     self->irecv_tuple = NEW_TUPLE(
         mp_const_none,
         mp_obj_new_bytes(tmp, MP_ARRAY_SIZE(tmp)));
-    self->none_tuple = NEW_TUPLE(
-        mp_const_none,
-        mp_const_none);
 
     self->recv_cb = mp_const_none;
     self->peers_table = mp_obj_new_dict(0);
@@ -231,16 +227,16 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(espnow_active_obj, 1, 2, espnow_activ
 
 // ESPNow.config(['param'|param=value, ..])
 // Get or set configuration values. Supported config params:
-//    rxbuf: size of internal buffer for rx packets (default=514 bytes)
+//    buffer: size of buffer for rx packets (default=514 bytes)
 //    timeout: Default read timeout (default=300,000 milliseconds)
 STATIC mp_obj_t espnow_config(
     size_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
 
     esp_espnow_obj_t *self = _get_singleton(0);
-    enum { ARG_get, ARG_rxbuf, ARG_timeout, ARG_rate };
+    enum { ARG_get, ARG_buffer, ARG_timeout, ARG_rate };
     static const mp_arg_t allowed_args[] = {
         { MP_QSTR_get, MP_ARG_OBJ, {.u_obj = MP_OBJ_NULL} },
-        { MP_QSTR_rxbuf, MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = -1} },
+        { MP_QSTR_buffer, MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = -1} },
         { MP_QSTR_timeout, MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = -1} },
         { MP_QSTR_rate, MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = -1} },
     };
@@ -248,8 +244,8 @@ STATIC mp_obj_t espnow_config(
     mp_arg_parse_all(n_args - 1, pos_args + 1, kw_args,
         MP_ARRAY_SIZE(allowed_args), allowed_args, args);
 
-    if (args[ARG_rxbuf].u_int >= 0) {
-        self->recv_buffer_size = args[ARG_rxbuf].u_int;
+    if (args[ARG_buffer].u_int >= 0) {
+        self->recv_buffer_size = args[ARG_buffer].u_int;
     }
     if (args[ARG_timeout].u_int >= 0) {
         self->recv_timeout_ms = args[ARG_timeout].u_int;
@@ -271,7 +267,7 @@ STATIC mp_obj_t espnow_config(
 #define QS(x) (uintptr_t)MP_OBJ_NEW_QSTR(x)
     // Return the value of the requested parameter
     uintptr_t name = (uintptr_t)args[ARG_get].u_obj;
-    if (name == QS(MP_QSTR_rxbuf)) {
+    if (name == QS(MP_QSTR_buffer)) {
         return mp_obj_new_int(self->recv_buffer_size);
     } else if (name == QS(MP_QSTR_timeout)) {
         return mp_obj_new_int(self->recv_timeout_ms);
@@ -456,6 +452,10 @@ static int _recv_hdr(size_t n_args, const mp_obj_t *args, mp_obj_t *peer) {
     return pkt.hdr.msg_len;
 }
 
+// The tuple returned by recv()/irecv() on timeout: (None, None)
+static const mp_rom_obj_tuple_t none_tuple =
+    {{&mp_type_tuple}, 2, {mp_const_none, mp_const_none}};
+
 // ESPNow.irecv([timeout]):
 // Like ESPNow.recv() but returns a "callee-owned" tuple of byte strings.
 // This provides an allocation-free way to read successive messages.
@@ -474,7 +474,7 @@ STATIC mp_obj_t espnow_irecv(size_t n_args, const mp_obj_t *args) {
     msg->len = 0;
     msg->len = _recv_hdr(n_args, args, &self->irecv_tuple->items[0]);
     if (msg->len == 0) {
-        return self->none_tuple;    // Timeout waiting for packet
+        return MP_OBJ_FROM_PTR(&none_tuple);    // Timeout waiting for packet
     }
 
     // Now read the message into the byte string.
@@ -498,7 +498,7 @@ STATIC mp_obj_t espnow_recv(size_t n_args, const mp_obj_t *args) {
     mp_obj_t peer;
     int msg_len = _recv_hdr(n_args, args, &peer);
     if (msg_len == 0) {
-        return self->none_tuple;    // Timeout waiting for packet
+        return MP_OBJ_FROM_PTR(&none_tuple);    // Timeout waiting for packet
     }
 
     // Allocate vstr as new storage buffers for the message.
