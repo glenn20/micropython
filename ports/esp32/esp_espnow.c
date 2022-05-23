@@ -453,8 +453,9 @@ static int _recv_hdr(size_t n_args, const mp_obj_t *args, mp_obj_t *peer) {
 }
 
 // The tuple returned by recv()/irecv() on timeout: (None, None)
-static const mp_rom_obj_tuple_t none_tuple =
-    {{&mp_type_tuple}, 2, {mp_const_none, mp_const_none}};
+static const mp_rom_obj_tuple_t none_tuple = {
+    {&mp_type_tuple}, 2, {mp_const_none, mp_const_none}
+};
 
 // ESPNow.irecv([timeout]):
 // Like ESPNow.recv() but returns a "callee-owned" tuple of byte strings.
