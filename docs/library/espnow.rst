@@ -83,7 +83,7 @@ Load this module from the :doc:`esp<esp>` module. A simple example would be:
     e.send("Starting...")       # Send to all peers
     for i in range(100):
         e.send(peer, str(i)*20, True)
-        e.send(b'end')
+        e.send(peer, b'end')
 
 **Receiver:** ::
 
