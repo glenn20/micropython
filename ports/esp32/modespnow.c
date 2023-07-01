@@ -387,6 +387,54 @@ static int ringbuf_get_bytes_wait(ringbuf_t *r, uint8_t *data, size_t len, mp_in
     return status;
 }
 
+// Construct a for statement to loop until the timeout is reached.
+// Loop forever if timeout_ms < 0
+// Execute loop at least once in case timeout_ms is set to zero.
+#define UNTIL_TIMEOUT(timeout_ms) \
+    for (mp_uint_t start = mp_hal_ticks_ms(), t = 0; \
+         timeout_ms < 0 || t < (mp_uint_t)timeout_ms || t == 0; \
+         t = mp_hal_ticks_ms() - start)
+
+// Execute a busy loop to wait till "test" is true (with a timeout).
+// Value is true if test evaluates to true or false if the loop timedout.
+// Uses gcc statement expressions.
+// Uses MICROPY_EVENT_POLL_HOOK to allow other tasks to run
+#define MP_BUSY_WAIT_BODY(test, timeout_ms, body) \
+    ({ \
+        bool success = false; \
+        UNTIL_TIMEOUT(timeout_ms) { \
+            if (test) { success = true; break; } \
+            body; \
+        }; \
+        success; \
+    })
+
+#define MP_BUSY_WAIT(test, timeout_ms) \
+    MP_BUSY_WAIT_BODY(test, timeout_ms, MICROPY_EVENT_POLL_HOOK)
+
+// As for MP_BUSY_WAIT(test, timeout_ms).
+// Will raise OSError(MP_ETIMEDOUT) if the loop timed out.
+// Evaluates to true.
+// Uses gcc statement expressions.
+#define MP_BUSY_WAIT_RAISE(test, timeout_ms) \
+    ({ \
+        if (!MP_BUSY_WAIT((test), (timeout_ms))) { \
+            mp_raise_OSError(MP_ETIMEDOUT); }; \
+        true; \
+    })
+
+// Copy data from the ring buffer - wait if buffer is empty up to timeout_ms
+//    0: Success
+//   -1: Not enough data available to complete read (try again later)
+// Raises ValueError if incoming msg is > len.
+static int ringbuf_get_bytes_raise(ringbuf_t *r, uint8_t *data, size_t len) {
+    int status = ringbuf_get_bytes(r, data, len);
+    if (status < -1) {
+        mp_raise_ValueError(MP_ERROR_TEXT("msg is larger than bytearray"));
+    }
+    return status;
+}
+
 // ESPNow.recvinto(buffers[, timeout_ms]):
 // Waits for an espnow message and copies the peer_addr and message into
 // the buffers list.
@@ -422,7 +470,9 @@ STATIC mp_obj_t espnow_recvinto(size_t n_args, const mp_obj_t *args) {
 
     // Read the packet header from the incoming buffer
     espnow_hdr_t hdr;
-    if (ringbuf_get_bytes_wait(self->recv_buffer, (uint8_t *)&hdr, sizeof(hdr), timeout_ms) < 0) {
+    if (!MP_BUSY_WAIT(
+        ringbuf_get_bytes_raise(self->recv_buffer, (uint8_t *)&hdr, sizeof(hdr)) == 0,
+        timeout_ms)) {
         return MP_OBJ_NEW_SMALL_INT(0);    // Timeout waiting for packet
     }
     int msg_len = hdr.msg_len;
@@ -469,15 +519,7 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_1(espnow_any_obj, espnow_any);
 static void _wait_for_pending_responses(esp_espnow_obj_t *self) {
     mp_uint_t start = mp_hal_ticks_ms();
     mp_uint_t t;
-    while (self->tx_responses < self->tx_packets) {
-        if ((t = mp_hal_ticks_ms() - start) > PENDING_RESPONSES_TIMEOUT_MS) {
-            mp_raise_OSError(MP_ETIMEDOUT);
-        }
-        if (t > PENDING_RESPONSES_BUSY_POLL_MS) {
-            // After 10ms of busy waiting give other tasks a look in.
-            MICROPY_EVENT_POLL_HOOK;
-        }
-    }
+    MP_BUSY_WAIT_RAISE(self->tx_responses >= self->tx_packets, PENDING_RESPONSES_TIMEOUT_MS);
 }
 
 // ESPNow.send(peer_addr, message, [sync (=true), size])
@@ -513,11 +555,9 @@ STATIC mp_obj_t espnow_send(size_t n_args, const mp_obj_t *args) {
     int saved_failures = self->tx_failures;
     // Send the packet - try, try again if internal esp-now buffers are full.
     esp_err_t err;
-    mp_uint_t start = mp_hal_ticks_ms();
-    while ((ESP_ERR_ESPNOW_NO_MEM == (err = esp_now_send(peer, message.buf, message.len)))
-           && (mp_uint_t)(mp_hal_ticks_ms() - start) < (mp_uint_t)DEFAULT_SEND_TIMEOUT_MS) {
-        MICROPY_EVENT_POLL_HOOK;
-    }
+    MP_BUSY_WAIT(
+        (err = esp_now_send(peer, message.buf, message.len)) == ESP_ERR_ESPNOW_NO_MEM,
+        DEFAULT_SEND_TIMEOUT_MS);
     check_esp_err(err);           // Will raise OSError if e != ESP_OK
     // Increment the sent packet count. If peer_addr==NULL msg will be
     // sent to all peers EXCEPT any broadcast or multicast addresses.
