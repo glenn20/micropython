@@ -68,7 +68,8 @@ static void check_is_str_or_bytes(mp_obj_t self_in) {
 }
 
 static const byte *get_substring_data(const mp_obj_t obj, size_t n_args, const mp_obj_t *args, size_t *len) {
-    // Get substring data from obj, using args[0,1] to specify start and end indices.
+    // Get substring data from obj, using args[0,1] to specify start and end
+    // indices. Return NULL if the indices are out of range.
     GET_STR_DATA_LEN(obj, str, str_len);
     if (n_args > 0) {
         const mp_obj_type_t *self_type = mp_obj_get_type(obj);
@@ -77,9 +78,22 @@ static const byte *get_substring_data(const mp_obj_t obj, size_t n_args, const m
             end = str_index_to_ptr(self_type, str, str_len, args[1], true);
         }
         if (args[0] != mp_const_none) {
+            mp_int_t i = mp_obj_get_int(args[0]);
+            size_t end_index;
+            #if !MICROPY_PY_BUILTINS_STR_UNICODE
+            end_index = str_len;
+            #else
+            end_index = utf8_charlen(str, str_len);
+            #endif
+            if (i > (mp_int_t)end_index) {
+                return NULL;
+            }
             str = str_index_to_ptr(self_type, str, str_len, args[0], true);
         }
-        str_len = MAX(end - str, 0);
+        if (end < str) {
+            return NULL;
+        }
+        str_len = end - str;
     }
     if (len) {
         *len = str_len;
@@ -771,23 +785,23 @@ static mp_obj_t str_finder(size_t n_args, const mp_obj_t *args, int direction, b
 
     size_t sub_len;
     const byte *p = get_substring_data(args[0], n_args - 2, args + 2, &sub_len);
-    p = find_subbytes(p, sub_len, needle, needle_len, direction);
-    if (p == NULL) {
-        // not found
-        if (is_index) {
-            mp_raise_ValueError(MP_ERROR_TEXT("substring not found"));
-        } else {
-            return MP_OBJ_NEW_SMALL_INT(-1);
+    if (p) {
+        p = find_subbytes(p, sub_len, needle, needle_len, direction);
+        if (p) {
+            // found
+            #if MICROPY_PY_BUILTINS_STR_UNICODE
+            if (self_type == &mp_type_str) {
+                return MP_OBJ_NEW_SMALL_INT(utf8_ptr_to_index(haystack, p));
+            }
+            #endif
+            return MP_OBJ_NEW_SMALL_INT(p - haystack);
         }
-    } else {
-        // found
-        #if MICROPY_PY_BUILTINS_STR_UNICODE
-        if (self_type == &mp_type_str) {
-            return MP_OBJ_NEW_SMALL_INT(utf8_ptr_to_index(haystack, p));
-        }
-        #endif
-        return MP_OBJ_NEW_SMALL_INT(p - haystack);
     }
+    // not found
+    if (is_index) {
+        mp_raise_ValueError(MP_ERROR_TEXT("substring not found"));
+    }
+    return MP_OBJ_NEW_SMALL_INT(-1);
 }
 
 static mp_obj_t str_find(size_t n_args, const mp_obj_t *args) {
@@ -813,6 +827,9 @@ MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(str_rindex_obj, 2, 4, str_rindex);
 static mp_obj_t str_startendswith(size_t n_args, const mp_obj_t *args, bool ends_with) {
     size_t str_len;
     const byte *str = get_substring_data(args[0], n_args - 2, args + 2, &str_len);
+    if (str == NULL) {
+        return mp_const_false;
+    }
     mp_obj_t *prefixes = (mp_obj_t *)&args[1];
     size_t n_prefixes = 1;
     if (mp_obj_is_type(args[1], &mp_type_tuple)) {
@@ -1592,7 +1609,7 @@ static mp_obj_t str_modulo_format(mp_obj_t pattern, size_t n_args, const mp_obj_
                 mp_print_mp_int(&print, arg_as_int(arg), 10, 'a', flags, fill, width, prec);
                 break;
 
-            #if MICROPY_PY_BUILTINS_FLOAT
+                #if MICROPY_PY_BUILTINS_FLOAT
             case 'e':
             case 'E':
             case 'f':
@@ -1601,7 +1618,7 @@ static mp_obj_t str_modulo_format(mp_obj_t pattern, size_t n_args, const mp_obj_
             case 'G':
                 mp_print_float(&print, mp_obj_get_float(arg), *str, flags, fill, width, prec);
                 break;
-            #endif
+                #endif
 
             case 'o':
                 if (alt) {
@@ -1773,6 +1790,9 @@ static mp_obj_t str_count(size_t n_args, const mp_obj_t *args) {
 
     size_t haystack_len;
     const byte *haystack = get_substring_data(args[0], n_args - 2, args + 2, &haystack_len);
+    if (haystack == NULL) {
+        return MP_OBJ_NEW_SMALL_INT(0);
+    }
     const byte *end = haystack + haystack_len;
     GET_STR_DATA_LEN(args[1], needle, needle_len);
 
@@ -2215,10 +2235,10 @@ mp_obj_t mp_obj_new_str_copy(const mp_obj_type_t *type, const byte *data, size_t
 mp_obj_t mp_obj_new_str_of_type(const mp_obj_type_t *type, const byte *data, size_t len) {
     if (type == &mp_type_str) {
         return mp_obj_new_str((const char *)data, len);
-    #if MICROPY_PY_BUILTINS_BYTEARRAY
+        #if MICROPY_PY_BUILTINS_BYTEARRAY
     } else if (type == &mp_type_bytearray) {
         return mp_obj_new_bytearray(len, data);
-    #endif
+        #endif
     } else {
         return mp_obj_new_bytes(data, len);
     }

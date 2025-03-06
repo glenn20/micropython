@@ -22,6 +22,24 @@ print("0000".find('1', 3))
 print("0000".find('1', 4))
 print("0000".find('1', 5))
 print("aaaaaaaaaaa".find("bbb", 9, 2))
+print("".find(""))
+print("".find("a"))
+print("abc".find("", 1))  # 1
+print("abc".find("", 3))  # 3
+print("abc".find("", 4))  # -1
+print("abc".find("", 9))  # -1
+print("abc".find("", -1))  # 2
+print("abc".find("", -3))  # 0
+print("abc".find("", -5))  # 0
+print("abc".find("", 1, 1))  # 1
+print("abc".find("", 3, 3))  # 3
+print("abc".find("", 3, 4))  # 3
+print("abc".find("", 3, 9))  # 3
+print("abc".find("", 3, 2))  # -1
+print("abc".find("", 3, -1))  # -1
+print("abc".find("", 1, -1))  # 1
+print("abc".find("", -6, -5))  # 0
+print("abc".find("", -6, -9))  # 0
 
 try:
     'abc'.find(1)
